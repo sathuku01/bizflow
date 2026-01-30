@@ -2,7 +2,7 @@ package filters
 
 import (
 	"fmt"
-	"github.com/yourusername/marketing-consultant-agent/internal/core"
+	"biz-flow/internal/core"
 )
 
 // ConstraintValidator validates specific constraints for platforms
