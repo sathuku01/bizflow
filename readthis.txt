@@ -1,0 +1,271 @@
+FINAL SCOPE STATEMENT
+Micro-Business Marketing Consultant Agent
+
+What This Agent Is
+A marketing consultant AI that:
+
+Analyzes a micro-business's context (type, budget, goals, location)
+Evaluates relevant marketing platforms based on business-specific constraints
+Recommends the top 3 platforms ranked by fit
+Provides example content templates for the top recommendation
+Explains recommendations in business reasoning (not just scores)
+
+
+What This Agent Does
+Input Processing
+Accepts structured business information:
+
+Business type (retail / service / digital)
+Product/service description
+Geographic location
+Monthly marketing budget
+Current marketing channels (if any)
+Primary goal (awareness / sales)
+
+Platform Evaluation
+
+Filters platforms by business type relevance
+Scores each relevant platform on:
+
+Audience fit
+Budget feasibility
+Content effort required
+Expected return (heuristic-based)
+
+
+Ranks platforms by composite score
+
+Recommendation Output
+Returns:
+
+Top 3 ranked platforms with reasoning
+Example content template for #1 platform:
+
+Hook
+Caption
+Call-to-action
+Hashtags (where applicable)
+
+
+Business reasoning for why each platform was ranked
+Strategic advice (e.g., "Focus here for 3 months, then evaluate X")
+Risk warnings (e.g., "Requires consistent posting", "Visual content needed")
+
+
+What This Agent Does NOT Do
+❌ Execute or schedule posts
+❌ Manage ad campaigns
+❌ Track performance metrics
+❌ Store user data persistently
+❌ Provide A/B testing plans
+❌ Evaluate all platforms regardless of business type
+❌ Generate ready-to-use content (only templates/examples)
+
+Platform Universe
+Available Platforms:
+
+Instagram
+Facebook
+TikTok
+Google My Business
+WhatsApp Business
+Email/Newsletter
+LinkedIn
+YouTube
+
+Filtering Logic:
+
+Retail (physical products) → Instagram, Facebook, TikTok, Google My Business
+Service (local) → Google My Business, Facebook, WhatsApp Business, Instagram
+Digital (SaaS/info products) → LinkedIn, Email, YouTube, Instagram
+
+Only relevant platforms are evaluated per business type.
+
+Constraint Rules (Deterministic Logic)
+Budget Constraints
+
+< $50/month: Only organic platforms evaluated
+$50-$200/month: Organic prioritized, paid platforms soft-penalized
+> $200/month: Paid platforms (Facebook Ads, Google Ads) become viable
+
+Effort Constraints
+
+Solo business (implied by micro-business): Video platforms (TikTok, YouTube) penalized unless product is highly visual
+Service businesses: Text-heavy platforms (LinkedIn, Email) get effort bonuses
+
+Location Constraints
+
+Local business: Google My Business heavily prioritized
+Online-only: Location-agnostic platforms prioritized
+
+Goal Constraints
+
+Awareness goal: Reach-focused platforms (Instagram, TikTok, Facebook) prioritized
+Sales goal: Conversion-focused platforms (Email, Google My Business, WhatsApp) prioritized
+
+
+Reasoning Format
+Business reasoning style (Option A):
+
+"Instagram is recommended because your handmade jewelry is highly visual, your budget ($80/month) fits organic posting, and awareness is your primary goal. Instagram's visual feed and Reels feature align with showcasing product details. However, this requires 3-5 posts per week to maintain visibility."
+
+NOT score-only reasoning like:
+
+"Instagram scored 8.7/10 based on weighted criteria."
+
+Scores are used internally but explained in business terms.
+
+User Journey
+1. User fills business info form (UI)
+        ↓
+2. Agent filters relevant platforms
+        ↓
+3. Agent scores filtered platforms
+        ↓
+4. Agent ranks top 3 platforms
+        ↓
+5. Agent generates example content for #1
+        ↓
+6. Agent writes strategic advice + risks
+        ↓
+7. UI displays:
+   - Top 3 platforms (ranked)
+   - Reasoning for each
+   - Example content template for #1
+   - Strategic next steps
+   - Risk warnings
+        ↓
+8. User reads advice → acts independently
+No feedback loop. No tracking. One-shot consultation.
+
+Example Output Structure
+json{
+  "recommendations": [
+    {
+      "rank": 1,
+      "platform": "Instagram",
+      "reasoning": "Your handmade jewelry is highly visual...",
+      "content_template": {
+        "hook": "✨ Each piece tells a story",
+        "caption": "Behind every design is hours of handcrafting...",
+        "cta": "Shop the collection (link in bio)",
+        "hashtags": ["#HandmadeJewelry", "#ArtisanCrafted", "#ShopSmall"]
+      }
+    },
+    {
+      "rank": 2,
+      "platform": "Facebook",
+      "reasoning": "Good for local awareness and community building..."
+    },
+    {
+      "rank": 3,
+      "platform": "Google My Business",
+      "reasoning": "Essential for local search visibility..."
+    }
+  ],
+  "strategic_advice": "Focus on Instagram for 3 months with 4-5 posts/week...",
+  "risks": [
+    "Requires consistent visual content creation",
+    "Algorithm favors video (Reels) over static posts"
+  ]
+}
+
+Technical Constraints
+
+Deployment: Local demo (CLI or simple web UI)
+No external APIs: No live platform integrations
+No authentication: Single-session, stateless
+Graceful errors: Invalid input returns clear error messages
+No databases: All logic in-memory per session
+
+
+Hackathon Alignment
+CriterionHow This Scope Supports ItSystem Design (25%)Clear separation: Input → Filtering → Scoring → Ranking → Generation → OutputAI Agent Behavior (25%)Transparent reasoning, constraint-based filtering, explainable platform selectionDemo & Explanation (15%)Single-user journey, visible reasoning, structured outputSDG Impact (15%)SDG 1 (micro-business income), SDG 8 (SME productivity), SDG 9 (intelligent systems)
+
+Complexity Ceiling
+This agent is:
+
+Moderate AI complexity: Inference for persona/messaging, deterministic for scoring
+Low UI complexity: Single-page form + results display
+Zero integration complexity: No external services
+
+This keeps scope achievable within hackathon timeframe.
+
+SCOPE LOCKED ✅
+Status: Ready for architecture design.
+Next Step: Define agent architecture:
+
+Module structure (input processor, platform filter, scoring engine, content generator, output formatter)
+State flow (what happens in what order)
+Reasoning pipeline (how constraints + AI combine)
+
+Say "proceed to architecture" and I'll design the system.
+
+-----------------------------------------------------------------------------------------------
+
+Backend Development Plan for BizFlow
+Based on your codebase, here's how to break down the backend work for a team of 3:
+
+Module Breakdown
+Module 1: Core Platform & Filtering Engine
+Owner: Developer A
+
+Focus on the foundation layer that all other modules depend on.
+
+Files to implement:
+
+business.go - Add Validate() and String() methods
+platform.go - Add GetPlatformMetadata() helper
+platform_filter.go - Already mostly done
+constraint_validator.go - Already complete
+Deliverables:
+
+Complete business validation logic
+Platform metadata management
+Constraint validation system
+Unit tests for all filtering logic
+Module 2: AI Integration & Content Generation
+Owner: Developer B
+
+Focus on AI-driven recommendation and content generation.
+
+Files to implement:
+
+client.go - LLM API client (Claude/OpenAI)
+prompts.go - Prompt templates for recommendations
+persona_inferrer.go - Infer business persona from description
+content_generator.go - Generate content templates
+Deliverables:
+
+LLM integration with error handling
+Persona inference logic
+Content template generation
+Prompt engineering for quality outputs
+Module 3: Reasoning & Recommendation Engine
+Owner: Developer C
+
+Focus on scoring, analysis, and final recommendations.
+
+Files to implement:
+
+scorer.go - Base scoring interface
+audience_scorer.go - Score platform fit
+budget_scorer.go - Evaluate budget efficiency
+effort_scorer.go - Assess effort feasibility
+return_scorer.go - ROI potential
+explainer.go - Explain recommendations
+risk_assessor.go - Identify risks
+strategy_advisor.go - Strategic guidance
+agent_handler.go - HTTP handler orchestrating everything
+handler.go - Web server setup
+Deliverables:
+
+Composite scoring algorithm
+Risk assessment framework
+Strategic advice generation
+API endpoint implementation
+Integration Points
+Development Order
+Dev A starts first - Build the foundation (business validation, platform metadata)
+Dev B starts second - Once core is stable, integrate AI client
+Dev C starts third - Implement scoring/reasoning with exposed interfaces from A & B
