@@ -1,7 +1,7 @@
 package filters
 
 import (
-	"github.com/yourusername/marketing-consultant-agent/internal/core"
+	"biz-flow/internal/core"
 )
 
 // PlatformFilter handles filtering platforms based on business characteristics
