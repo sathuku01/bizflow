@@ -31,88 +31,140 @@ func NewNotionClient() *NotionClient {
 	}
 }
 
+// FetchTemplate retrieves content from the Library/Content database
 func (n *NotionClient) FetchTemplate(platform string) (h, c, ct string, tags []string, err error) {
-	query := &notionapi.DatabaseQueryRequest{
-		Filter: &notionapi.PropertyFilter{
-			Property: "Platform",
-			RichText: &notionapi.TextFilterCondition{Equals: platform},
-		},
-		PageSize: 1,
+    query := &notionapi.DatabaseQueryRequest{
+        Filter: &notionapi.PropertyFilter{
+            Property: "Platform",
+            RichText: &notionapi.TextFilterCondition{Equals: platform},
+        },
+        PageSize: 1,
+    }
+    resp, err := n.client.Database.Query(context.Background(), n.contentDBID, query)
+    
+    // 1. If no row exists at all
+    if err != nil || len(resp.Results) == 0 {
+        return "", "", "", nil, fmt.Errorf("not found")
+    }
+
+    page := resp.Results[0]
+    extract := func(propName string) string {
+        if p, ok := page.Properties[propName].(*notionapi.RichTextProperty); ok && len(p.RichText) > 0 {
+            return strings.TrimSpace(p.RichText[0].Text.Content)
+        }
+        return ""
+    }
+
+    hook := extract("Hook")
+    
+    // 2. CRITICAL: If the row exists but the Hook is empty, treat as "not found"
+    if hook == "" {
+        return "", "", "", nil, fmt.Errorf("template exists but is empty")
+    }
+
+    return hook, extract("Caption"), extract("CTA"), []string{}, nil
+}
+// SaveQuery logs the interaction to the History database
+func (n *NotionClient) SaveQuery(input BusinessInput, output AgentOutput) error {
+	fmt.Printf("⏳ Saving record to History DB [%s]...\n", n.historyDBID)
+
+	props := notionapi.Properties{}
+
+	props["Business Type"] = &notionapi.TitleProperty{
+		Title: []notionapi.RichText{{Text: &notionapi.Text{Content: input.BusinessType}}},
 	}
-	resp, err := n.client.Database.Query(context.Background(), n.contentDBID, query)
-	if err != nil || len(resp.Results) == 0 {
-		return "", "", "", nil, fmt.Errorf("no template found")
+	props["Description"] = &notionapi.RichTextProperty{
+		RichText: []notionapi.RichText{{Text: &notionapi.Text{Content: input.Description}}},
+	}
+	props["Budget"] = &notionapi.NumberProperty{Number: input.MonthlyBudget}
+
+	if input.PrimaryGoal != "" {
+		// Ensure 'Goal' is a Select property in Notion
+		props["Goal"] = &notionapi.SelectProperty{
+			Select: notionapi.Option{Name: input.PrimaryGoal},
+		}
 	}
 
-	page := resp.Results[0]
-	extract := func(propName string) string {
-		if p, ok := page.Properties[propName].(*notionapi.RichTextProperty); ok && len(p.RichText) > 0 {
-			return p.RichText[0].Text.Content
+	if len(input.Channels) > 0 {
+		var options []notionapi.Option
+		for _, ch := range input.Channels {
+			options = append(options, notionapi.Option{Name: ch})
 		}
-		return ""
+		props["Channels"] = &notionapi.MultiSelectProperty{MultiSelect: options}
 	}
-	return extract("Hook"), extract("Caption"), extract("CTA"), []string{}, nil
+
+	if len(output.Recommendations) > 0 {
+		props["Top Platform"] = &notionapi.SelectProperty{
+			Select: notionapi.Option{Name: output.Recommendations[0].Platform},
+		}
+	}
+
+	formattedText := formatAIOutput(output)
+	props["AI Output"] = &notionapi.RichTextProperty{
+		RichText: splitToRichText(formattedText, 1900),
+	}
+
+	resp, err := n.client.Page.Create(context.Background(), &notionapi.PageCreateRequest{
+		Parent:     notionapi.Parent{DatabaseID: n.historyDBID},
+		Properties: props,
+	})
+
+	if err != nil {
+		fmt.Printf("❌ HISTORY ERROR: %+v\n", err)
+		return err
+	}
+
+	fmt.Printf("✅ HISTORY SUCCESS: Page ID %s\n", resp.ID)
+	return nil
 }
 
-func (n *NotionClient) SaveQuery(input BusinessInput, output AgentOutput) error {
-    fmt.Printf("Attempting to save to Database ID: %s\n", n.historyDBID)
-    
-    props := notionapi.Properties{}
+// SaveTemplate creates a new entry in the Content/Library database if it was missing
+func (n *NotionClient) SaveTemplate(platform, hook, caption, cta string, tags []string) error {
+	fmt.Printf("🔍 DEBUG: Saving new AI template to Content DB for %s...\n", platform)
 
-    // 1. Business Type (MUST be a 'Title' type column in Notion)
-    props["Business Type"] = &notionapi.TitleProperty{
-        Title: []notionapi.RichText{{Text: &notionapi.Text{Content: input.BusinessType}}},
-    }
+	props := notionapi.Properties{
+		"Platform": &notionapi.TitleProperty{
+			Title: []notionapi.RichText{{Text: &notionapi.Text{Content: platform}}},
+		},
+		"Hook": &notionapi.RichTextProperty{
+			RichText: []notionapi.RichText{{Text: &notionapi.Text{Content: hook}}},
+		},
+		"Caption": &notionapi.RichTextProperty{
+			RichText: []notionapi.RichText{{Text: &notionapi.Text{Content: caption}}},
+		},
+		"CTA": &notionapi.RichTextProperty{
+			RichText: []notionapi.RichText{{Text: &notionapi.Text{Content: cta}}},
+		},
+		"Notes": &notionapi.RichTextProperty{
+			RichText: []notionapi.RichText{{Text: &notionapi.Text{Content: "AI Generated"}}},
+		},
+	}
 
-    // 2. Description (Text/Rich Text)
-    props["Description"] = &notionapi.RichTextProperty{
-        RichText: []notionapi.RichText{{Text: &notionapi.Text{Content: input.Description}}},
-    }
+	// Format Multi-Select Hashtags (Notion strictly requires unique Names)
+	var tagOptions []notionapi.Option
+	seen := make(map[string]bool)
+	for _, t := range tags {
+		cleanTag := strings.TrimSpace(strings.TrimPrefix(t, "#"))
+		if cleanTag != "" && !seen[cleanTag] {
+			tagOptions = append(tagOptions, notionapi.Option{Name: cleanTag})
+			seen[cleanTag] = true
+		}
+	}
+	props["Hashtags"] = &notionapi.MultiSelectProperty{
+		MultiSelect: tagOptions,
+	}
 
-    // 3. Budget (Number)
-    props["Budget"] = &notionapi.NumberProperty{Number: input.MonthlyBudget}
+	resp, err := n.client.Page.Create(context.Background(), &notionapi.PageCreateRequest{
+		Parent:     notionapi.Parent{DatabaseID: n.contentDBID},
+		Properties: props,
+	})
 
-    // 4. Goal (Select)
-    if input.PrimaryGoal != "" {
-        props["Goal"] = &notionapi.SelectProperty{
-            Select: notionapi.Option{Name: input.PrimaryGoal},
-        }
-    }
-
-    // 5. Channels (Multi-select)
-    if len(input.Channels) > 0 {
-        var options []notionapi.Option
-        for _, ch := range input.Channels {
-            options = append(options, notionapi.Option{Name: ch})
-        }
-        props["Channels"] = &notionapi.MultiSelectProperty{MultiSelect: options}
-    }
-
-    // 6. Top Platform (Select)
-    if len(output.Recommendations) > 0 {
-        props["Top Platform"] = &notionapi.SelectProperty{
-            Select: notionapi.Option{Name: output.Recommendations[0].Platform},
-        }
-    }
-
-    // 7. AI Output (Text/Rich Text)
-    formattedText := formatAIOutput(output)
-    props["AI Output"] = &notionapi.RichTextProperty{
-        RichText: splitToRichText(formattedText, 1900),
-    }
-
-    // CREATE THE PAGE
-    resp, err := n.client.Page.Create(context.Background(), &notionapi.PageCreateRequest{
-        Parent:     notionapi.Parent{DatabaseID: n.historyDBID},
-        Properties: props,
-    })
-
-    if err != nil {
-        return fmt.Errorf("Notion API Error: %w", err)
-    }
-
-    fmt.Printf("✅ Success! New Page Created: %s\n", resp.ID)
-    return nil
+	if err != nil {
+		fmt.Printf("❌ CONTENT DB ERROR: %v\n", err)
+		return err
+	}
+	fmt.Printf("✅ CONTENT DB SUCCESS: Created Template ID %s\n", resp.ID)
+	return nil
 }
 
 func formatAIOutput(out AgentOutput) string {
@@ -130,7 +182,9 @@ func splitToRichText(text string, limit int) []notionapi.RichText {
 	runes := []rune(text)
 	for i := 0; i < len(runes); i += limit {
 		end := i + limit
-		if end > len(runes) { end = len(runes) }
+		if end > len(runes) {
+			end = len(runes)
+		}
 		results = append(results, notionapi.RichText{
 			Type: "text",
 			Text: &notionapi.Text{Content: string(runes[i:end])},
