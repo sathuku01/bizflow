@@ -6,7 +6,6 @@ require (
 	github.com/jomei/notionapi v1.13.3
 	github.com/sashabaranov/go-openai v1.41.2
 )
-
 require (
 	cloud.google.com/go v0.115.0 // indirect
 	cloud.google.com/go/ai v0.8.0 // indirect
@@ -39,5 +38,4 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260122232226-8e98ce8d340d // indirect
 	google.golang.org/grpc v1.78.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
->>>>>>> frontend
 )

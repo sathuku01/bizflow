@@ -1,5 +1,4 @@
 <script lang="ts">
-  // ... your existing logic stays exactly the same ...
   interface ContentTemplate {
     hook: string;
     caption: string;
@@ -21,6 +20,7 @@
   }
 
   let errors = '';
+  let loading = false;
   let businessType = 'retail';
   let description = '';
   let location = '';
@@ -30,250 +30,246 @@
   let recommendations: RecommendationsResult | null = null;
 
   async function handleSubmit() {
-    // Example validation
-    if (!description || !location || !budget || channels.length === 0) {
-      errors = 'Please fill in all fields and select at least one channel.';
+    if (!description || !budget || channels.length === 0) {
+      errors = 'Please fill in description, budget, and select at least one channel.';
       recommendations = null;
       return;
     }
+
     errors = '';
-    // Example: Replace with your API call
-    recommendations = {
-      recommendations: [
-        {
-          rank: 1,
-          platform: 'Instagram',
-          reasoning: 'Best for visual products and local reach.',
-          content_template: {
-            hook: 'Show your unique mugs!',
-            caption: 'Handmade with love in Austin.',
-            cta: 'Order now!',
-            hashtags: ['#ceramics', '#handmade', '#austin']
-          }
-        },
-        {
-          rank: 2,
-          platform: 'Facebook',
-          reasoning: 'Great for community engagement.',
-          content_template: {
-            hook: 'Join our mug lovers group!',
-            caption: 'Exclusive deals for members.',
-            cta: 'Join today!',
-            hashtags: ['#muglife', '#shoplocal']
-          }
-        },
-        {
-          rank: 3,
-          platform: 'GMB',
-          reasoning: 'Boosts local search visibility.',
-          content_template: null
+    loading = true;
+    recommendations = null;
+
+    try {
+      const response = await fetch('http://192.168.89.196:8080/run-agent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          business_type: businessType,
+          description: `${description} based in ${location}`,
+          monthly_budget: parseFloat(budget),
+          goal: goal,
+          channels: channels
+        })
+      });
+
+      if (!response.ok) throw new Error(`Server error: ${response.statusText}`);
+
+      const data = await response.json();
+
+      if (data.strategic_advice === "LLM Init Failed") {
+        errors = "The AI Agent is having trouble starting. Check backend API keys.";
+      } else {
+        recommendations = data;
+        if (window.innerWidth < 900) {
+          setTimeout(() => {
+            document.getElementById('results')?.scrollIntoView({ behavior: 'smooth' });
+          }, 100);
         }
-      ],
-      strategic_advice: 'Focus on Instagram and Facebook for best ROI.',
-      risks: ['Ad fatigue', 'Budget constraints']
-    };
+      }
+    } catch (err) {
+      errors = "Could not connect to the backend. Ensure Go server is running on 8080.";
+      console.error(err);
+    } finally {
+      loading = false;
+    }
+  }
+
+  function copyToClipboard(text: string) {
+    navigator.clipboard.writeText(text);
+    alert('Template copied to clipboard!');
   }
 </script>
 
 <div class="container">
-  <h1>Micro-Business Marketing Consultant</h1>
+  <header>
+    <h1>BizFlow AI</h1>
+    <p class="subtitle">Micro-Business Marketing Consultant</p>
+  </header>
 
   {#if errors}
-    <p class="error">{errors}</p>
-  {/if}
-
-  <form on:submit|preventDefault={handleSubmit}>
-    <label>
-      Business Type:
-      <select bind:value={businessType}>
-        <option value="retail">Retail</option>
-        <option value="service">Service</option>
-        <option value="digital">Digital</option>
-      </select>
-    </label>
-
-    <label>
-      Description:
-      <input type="text" placeholder="e.g. Handmade ceramic mugs" bind:value={description} />
-    </label>
-
-    <label>
-      Location:
-      <input type="text" placeholder="e.g. Austin, TX" bind:value={location} />
-    </label>
-
-    <label>
-      Monthly Budget ($):
-      <input type="number" bind:value={budget} />
-    </label>
-
-    <label>
-      Channels:
-      <div class="checkbox-group">
-        <label class="check-item"><input type="checkbox" value="Instagram" bind:group={channels} /> Instagram</label>
-        <label class="check-item"><input type="checkbox" value="Facebook" bind:group={channels} /> Facebook</label>
-        <label class="check-item"><input type="checkbox" value="TikTok" bind:group={channels} /> TikTok</label>
-        <label class="check-item"><input type="checkbox" value="Google My Business" bind:group={channels} /> GMB</label>
-      </div>
-    </label>
-
-    <label>
-      Primary Goal:
-      <select bind:value={goal}>
-        <option value="awareness">Awareness</option>
-        <option value="sales">Sales</option>
-      </select>
-    </label>
-
-    <button type="submit">Get Recommendations</button>
-  </form>
-
-  {#if recommendations}
-    <div class="results-section">
-      <h2>Top 3 Recommendations</h2>
-      {#each recommendations.recommendations as rec}
-        <div class="rec-card">
-          <h3>{rec.rank}. {rec.platform}</h3>
-          <p class="reasoning">{rec.reasoning}</p>
-          
-          {#if rec.content_template}
-            <div class="template-box">
-              <h4>Content Template</h4>
-              <p><strong>Hook:</strong> {rec.content_template.hook}</p>
-              <p><strong>Caption:</strong> {rec.content_template.caption}</p>
-              <p><strong>CTA:</strong> {rec.content_template.cta}</p>
-              <p class="tags">{rec.content_template.hashtags.join(', ')}</p>
-            </div>
-          {/if}
-        </div>
-      {/each}
-
-      <div class="advice-card">
-        <h3>Strategic Advice</h3>
-        <p>{recommendations.strategic_advice}</p>
-
-        <h3>Risks to Consider</h3>
-        <ul>
-          {#each recommendations.risks as risk}
-            <li>{risk}</li>
-          {/each}
-        </ul>
-      </div>
+    <div class="error-banner">
+      <span class="icon">⚠️</span> {errors}
     </div>
   {/if}
+
+  <div class="main-grid">
+    <section class="form-section">
+      <form on:submit|preventDefault={handleSubmit}>
+        <div class="field">
+          <label for="type">Business Type</label>
+          <select id="type" bind:value={businessType}>
+            <option value="retail">Retail</option>
+            <option value="service">Service</option>
+            <option value="digital">Digital</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="desc">Description</label>
+          <input id="desc" type="text" placeholder="e.g. Handmade ceramic mugs" bind:value={description} />
+        </div>
+
+        <div class="field">
+          <label for="loc">Location</label>
+          <input id="loc" type="text" placeholder="e.g. Austin, TX" bind:value={location} />
+        </div>
+
+        <div class="field">
+          <label for="bud">Monthly Budget ($)</label>
+          <input id="bud" type="number" inputmode="decimal" bind:value={budget} />
+        </div>
+
+        <div class="field">
+          <label>Target Channels</label>
+          <div class="checkbox-group">
+            <label class="check-item"><input type="checkbox" value="Instagram" bind:group={channels} /> Instagram</label>
+            <label class="check-item"><input type="checkbox" value="Facebook" bind:group={channels} /> Facebook</label>
+            <label class="check-item"><input type="checkbox" value="TikTok" bind:group={channels} /> TikTok</label>
+            <label class="check-item"><input type="checkbox" value="Google My Business" bind:group={channels} /> GMB</label>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="goal">Primary Goal</label>
+          <select id="goal" bind:value={goal}>
+            <option value="awareness">Awareness</option>
+            <option value="sales">Sales</option>
+          </select>
+        </div>
+
+        <button type="submit" disabled={loading}>
+          {#if loading}
+            <span class="spinner"></span> Analyzing Market...
+          {:else}
+            Generate Strategy
+          {/if}
+        </button>
+      </form>
+    </section>
+
+    <section class="results-section" id="results">
+      {#if recommendations}
+        <div class="advice-card">
+          <h3>Strategic Advice</h3>
+          <p>{recommendations.strategic_advice}</p>
+        </div>
+
+        <h2>Requested Recommendations</h2>
+
+        {@const filteredRecs = recommendations.recommendations.filter(rec => {
+          const platform = rec.platform.toLowerCase();
+          return channels.some(c => platform.includes(c.toLowerCase()) || c.toLowerCase().includes(platform));
+        })}
+
+        {#if filteredRecs.length > 0}
+          {#each filteredRecs as rec}
+            <div class="rec-card">
+              <div class="rec-header">
+                <span class="rank">#{rec.rank}</span>
+                <h3>{rec.platform}</h3>
+              </div>
+              <p class="reasoning">{rec.reasoning}</p>
+              
+              {#if rec.content_template}
+                <div class="template-box">
+                  <div class="template-header">
+                    <span>Content Template</span>
+                    <button class="copy-btn" on:click={() => copyToClipboard(`${rec.content_template?.hook}\n${rec.content_template?.caption}`)}>
+                      Copy
+                    </button>
+                  </div>
+                  <div class="template-content">
+                    <p><strong>Hook:</strong> {rec.content_template.hook}</p>
+                    <p><strong>Caption:</strong> {rec.content_template.caption}</p>
+                    <p><strong>CTA:</strong> {rec.content_template.cta}</p>
+                    {#if rec.content_template.hashtags}
+                      <p class="tags">{rec.content_template.hashtags.map(t => (t.startsWith('#') ? t : '#' + t)).join(' ')}</p>
+                    {/if}
+                  </div>
+                </div>
+              {/if}
+            </div>
+          {/each}
+        {:else}
+          <div class="empty-state">
+            <p>The AI suggests other channels might be better, or naming didn't match. Try broader selections!</p>
+          </div>
+        {/if}
+
+        {#if recommendations.risks && recommendations.risks.length > 0}
+          <div class="risk-card">
+            <h3>Risks to Consider</h3>
+            <ul>
+              {#each recommendations.risks as risk}
+                <li>{risk}</li>
+              {/each}
+            </ul>
+          </div>
+        {/if}
+      {:else if !loading}
+        <div class="empty-state">
+          <p>Fill in details to generate your strategy.</p>
+        </div>
+      {/if}
+    </section>
+  </div>
 </div>
 
 <style>
-  /* Base Page Styling */
   :global(body) {
-    background-color: #f8fafc;
-    font-family: 'Inter', system-ui, sans-serif;
-    color: #1e293b;
+    background-color: #f1f5f9;
+    font-family: 'Inter', -apple-system, sans-serif;
+    color: #0f172a;
     margin: 0;
-    padding: 2rem;
   }
 
-  .container {
-    max-width: 600px;
-    margin: 0 auto;
+  .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+  header { margin-bottom: 2rem; text-align: center; }
+  h1 { font-size: 2.5rem; font-weight: 800; margin: 0; color: #4f46e5; }
+  .subtitle { color: #64748b; font-size: 1.1rem; }
+
+  .main-grid { display: grid; grid-template-columns: 400px 1fr; gap: 2rem; align-items: start; }
+
+  @media (min-width: 901px) {
+    .form-section { position: sticky; top: 2rem; background: white; padding: 2rem; border-radius: 1rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }
   }
 
-  h1 { color: #0f172a; margin-bottom: 2rem; }
-
-  form {
-    background: white;
-    padding: 1rem;
-    border-radius: 16px;
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-    border: 1px solid #e2e8f0;
+  @media (max-width: 900px) {
+    .container { padding: 1rem; }
+    .main-grid { grid-template-columns: 1fr; gap: 1.5rem; }
+    .form-section { position: static; background: white; padding: 1.5rem; border-radius: 1rem; }
+    h1 { font-size: 1.8rem; }
   }
 
-  label {
-    display: block;
-    margin-bottom: 1rem;
-    font-weight: 600;
-    font-size: 0.875rem;
-    color: #475569;
-  }
+  .field { margin-bottom: 1.25rem; }
+  label { display: block; font-weight: 600; margin-bottom: 0.4rem; font-size: 0.875rem; }
+  input, select { width: 100%; padding: 0.75rem; border: 1px solid #cbd5e1; border-radius: 0.5rem; font-size: 1rem; box-sizing: border-box; }
 
-  input, select {
-    width: 100%;
-    box-sizing: border-box; /* Prevents input from overflowing */
-    margin-top: 0.5rem;
-    padding: 0.75rem;
-    border: 1px solid #cbd5e1;
-    border-radius: 8px;
-    font-size: 1rem;
-  }
+  .checkbox-group { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; background: #f8fafc; padding: 0.75rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; }
+  .check-item { font-weight: normal; font-size: 0.85rem; display: flex; align-items: center; gap: 0.5rem; cursor: pointer; }
 
-  .checkbox-group {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    margin-top: 0.5rem;
-    background: #f1f5f9;
-    padding: 1rem;
-    border-radius: 8px;
-  }
+  button { width: 100%; background: #4f46e5; color: white; padding: 1rem; border: none; border-radius: 0.5rem; font-weight: 700; cursor: pointer; transition: all 0.2s; }
+  button:hover:not(:disabled) { background: #4338ca; transform: translateY(-1px); }
+  button:disabled { background: #94a3b8; cursor: not-allowed; }
 
-  .check-item {
-    font-weight: normal;
-    margin-bottom: 0;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  button {
-    width: 100%;
-    background-color: #6366f1;
-    color: white;
-    padding: 1rem;
-    border: none;
-    border-radius: 8px;
-    font-weight: 700;
-    font-size: 1rem;
-    cursor: pointer;
-    margin-top: 1rem;
-    transition: all 0.2s;
-  }
-
-  button:hover { background-color: #4f46e5; transform: translateY(-1px); }
-
-  /* Recommendations */
-  .rec-card {
-    background: white;
-    border-left: 6px solid #6366f1;
-    padding: 1.5rem;
-    margin: 1rem 0;
-    border-radius: 12px;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-  }
-
-  .template-box {
-    background: #f8fafc;
-    padding: 1rem;
-    border-radius: 8px;
-    margin-top: 1rem;
-    border: 1px dashed #cbd5e1;
-  }
-
-  .advice-card {
-    background: #eef2ff;
-    padding: 1.5rem;
-    border-radius: 12px;
-    border: 1px solid #c7d2fe;
-    margin-top: 2rem;
-  }
-
-  .error {
-    background: #fef2f2;
-    color: #dc2626;
-    padding: 1rem;
-    border-radius: 8px;
-    border: 1px solid #fecaca;
-    text-align: center;
-  }
+  .rec-card { background: white; padding: 1.5rem; border-radius: 1rem; margin-bottom: 1.5rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); border-left: 5px solid #4f46e5; }
+  .rec-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; }
+  .rank { background: #4f46e5; color: white; padding: 0.25rem 0.75rem; border-radius: 999px; font-weight: bold; font-size: 0.8rem; }
   
-  .tags { color: #6366f1; font-size: 0.85rem; font-family: monospace; }
+  .template-box { margin-top: 1rem; border: 1px solid #e2e8f0; border-radius: 0.5rem; overflow: hidden; }
+  .template-header { background: #f8fafc; padding: 0.6rem 1rem; font-size: 0.75rem; font-weight: bold; color: #64748b; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; }
+  .template-content { padding: 1rem; font-size: 0.95rem; line-height: 1.5; }
+  
+  .copy-btn { width: auto; padding: 0.2rem 0.6rem; font-size: 0.7rem; background: #e2e8f0; color: #475569; }
+  .copy-btn:hover { background: #cbd5e1; transform: none; }
+
+  .tags { color: #4f46e5; font-family: monospace; font-size: 0.85rem; margin-top: 0.8rem; }
+  .advice-card { background: #4f46e5; color: white; padding: 1.5rem; border-radius: 1rem; margin-bottom: 2rem; }
+  .risk-card { background: #fff1f2; border: 1px solid #fecdd3; padding: 1.5rem; border-radius: 1rem; margin-bottom: 2rem; }
+  .risk-card h3 { color: #be123c; margin-top: 0; }
+  .error-banner { background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; padding: 1rem; border-radius: 0.5rem; margin-bottom: 2rem; display: flex; align-items: center; gap: 0.5rem; }
+  .empty-state { text-align: center; padding: 5rem 1rem; color: #94a3b8; border: 2px dashed #cbd5e1; border-radius: 1rem; }
+  .spinner { display: inline-block; width: 1.2rem; height: 1.2rem; border: 3px solid rgba(255,255,255,0.3); border-radius: 50%; border-top-color: #fff; animation: spin 0.8s linear infinite; margin-right: 0.5rem; vertical-align: middle; }
+  @keyframes spin { to { transform: rotate(360deg); } }
 </style>
