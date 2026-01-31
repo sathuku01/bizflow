@@ -1,38 +1,39 @@
 package main
 
 import (
-    "net/http"
-    "fmt"
-    "encoding/json"
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
 
-    "bizflow/internal/ai"
+	"bizflow/internal/ai"
 )
 
 func main() {
+	http.HandleFunc("/run-agent", func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Println("Recovered from panic:", rec)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+			}
+		}()
 
-    http.HandleFunc("/run-agent", func(w http.ResponseWriter, r *http.Request) {
+		var input ai.BusinessInput
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			http.Error(w, "invalid input", http.StatusBadRequest)
+			return
+		}
 
-        if r.Method != http.MethodPost {
-            http.Error(w, "Only POST allowed", http.StatusMethodNotAllowed)
-            return
-        }
+		// Initialize Notion client
+		notion := ai.NewNotionClient()
+		output := ai.RunAgent(input, notion)
 
-        var input ai.BusinessInput
-        if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-            http.Error(w, "Invalid JSON", http.StatusBadRequest)
-            return
-        }
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(output); err != nil {
+			log.Println("failed to encode response:", err)
+		}
+	})
 
-        output := ai.RunAgent(input)
-
-        w.Header().Set("Content-Type", "application/json")
-        json.NewEncoder(w).Encode(output)
-    })
-
-    http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-        fmt.Fprintf(w, "OK")
-    })
-
-    fmt.Println("Server running at http://localhost:8080")
-    http.ListenAndServe(":8080", nil)
+	fmt.Println("Agent server running on :8080")
+	log.Fatal(http.ListenAndServe(":8080", nil))
 }

@@ -4,183 +4,101 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"log"
 
-	"github.com/google/generative-ai-go/genai"
-	"google.golang.org/api/option"
+	"github.com/sashabaranov/go-openai"
 )
 
-// --------------------
-// Session & Structures
-// --------------------
-type AgentSession struct {
-	Input       BusinessInput
-	Platforms   []PlatformScore
-	TopContent  ContentTemplate
-	Advice      string
-	Risks       []string
-}
-
-type PlatformScore struct {
-	Name     string
-	Score    float64
-	Reason   string
-}
-
-// --------------------
-// LLM Client
-// --------------------
 type LLMClient struct {
-	model *genai.GenerativeModel
+	client *openai.Client
+	model  string
 }
-
-var ErrMissingAPIKey = fmt.Errorf("GOOGLE_API_KEY not set")
 
 func NewLLMClient() (*LLMClient, error) {
-	apiKey := os.Getenv("GOOGLE_API_KEY")
+	apiKey := os.Getenv("OPENROUTER_API_KEY")
 	if apiKey == "" {
-		return nil, ErrMissingAPIKey
+		return nil, fmt.Errorf("OPENROUTER_API_KEY missing")
 	}
+	config := openai.DefaultConfig(apiKey)
+	config.BaseURL = "https://openrouter.ai/api/v1"
 
-	ctx := context.Background()
-	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
-	if err != nil {
-		return nil, fmt.Errorf("failed to init Gemini client: %v", err)
-	}
-
-	model := client.GenerativeModel("gemini-2.0-flash") // works with generateContent
-
-	return &LLMClient{model: model}, nil
+	return &LLMClient{
+		client: openai.NewClientWithConfig(config),
+		model:  "google/gemini-2.0-flash-001",
+	}, nil
 }
 
 func (l *LLMClient) GenerateText(prompt string) (string, error) {
-	ctx := context.Background()
-	resp, err := l.model.GenerateContent(ctx, genai.Text(prompt))
+	resp, err := l.client.CreateChatCompletion(
+		context.Background(),
+		openai.ChatCompletionRequest{
+			Model: l.model,
+			Messages: []openai.ChatCompletionMessage{
+				{Role: openai.ChatMessageRoleUser, Content: prompt},
+			},
+		},
+	)
 	if err != nil {
-		return "", fmt.Errorf("gemini API error: %v", err)
+		return "", err
 	}
-
-	if len(resp.Candidates) == 0 {
-		return "", fmt.Errorf("no candidates returned by LLM")
-	}
-
-	parts := resp.Candidates[0].Content.Parts
-	if len(parts) == 0 {
-		return "", fmt.Errorf("candidate has no content parts")
-	}
-
-	result := ""
-	for _, p := range parts {
-		result += fmt.Sprintf("%v", p)
-	}
-
-	return result, nil
+	return resp.Choices[0].Message.Content, nil
 }
 
-// --------------------
-// Core Agent Logic
-// --------------------
 func RunAgent(input BusinessInput, notion *NotionClient) AgentOutput {
 	llm, err := NewLLMClient()
 	if err != nil {
-		log.Println("LLM unavailable:", err)
-		return ErrorOutput("LLM unavailable, using fallback reasoning")
+		return AgentOutput{StrategicAdvice: "LLM Init Failed"}
 	}
 
 	platforms := []string{"Instagram", "Facebook", "TikTok", "Google My Business"}
-	var recommendations []Recommendation
+	var recs []Recommendation
 
 	for _, p := range platforms {
-		// Fetch template from Notion
-		hook, caption, cta, hashtags, err := notion.FetchTemplate(p)
-		if err != nil {
-			log.Println("Failed to fetch template for", p, ":", err)
-			hook, caption, cta, hashtags = "Generated automatically", "Fallback content template", "CTA coming soon", []string{"#agent"}
-		}
+		// 1. Fetch template from Notion
+		hook, caption, cta, tags, _ := notion.FetchTemplate(p)
 
-		// Build prompt for LLM
-		prompt := fmt.Sprintf(
-			"You are a marketing strategist. Your task: generate a short reasoning why the platform '%s' is suitable for a business with description: '%s'. Use this content template to guide the messaging:\nHook: %s\nCaption: %s\nCTA: %s\nHashtags: %v\nOutput should be concise, persuasive, and business-oriented.",
-			p, input.Description, hook, caption, cta, hashtags,
-		)
+		// 2. Build the prompt
+		prompt := fmt.Sprintf(`You are a micro-business marketing consultant.
+Analyze %s for a %s business: %s.
+Goal: %s | Budget: $%.2f
 
-		// Generate reasoning from LLM
-		reasoning, err := llm.GenerateText(prompt)
-		if err != nil {
-			log.Println("LLM generation failed for", p, ":", err)
-			reasoning = fmt.Sprintf("Fallback reasoning for %s based on business: %s", p, input.Description)
-		}
+Instructions:
+1. Provide 2-3 concise paragraphs of strategic reasoning.
+2. IMPORTANT: If the following template fields are empty, invent creative ones.
+   Hook: %s
+   Caption: %s
+   CTA: %s
 
-		rec := Recommendation{
-			Rank:      len(recommendations) + 1,
+Return your response in this format:
+REASONING: [Your paragraphs]
+NEW_HOOK: [Invented if missing]
+NEW_CAPTION: [Invented if missing]
+NEW_CTA: [Invented if missing]`,
+			p, input.BusinessType, input.Description, input.PrimaryGoal, input.MonthlyBudget, hook, caption, cta)
+
+		// 3. Get AI Response
+		aiRawResponse, _ := llm.GenerateText(prompt)
+
+		// 4. (Optional) Basic parsing logic could go here to extract the fields. 
+		// For now, we'll keep the reasoning as the full AI text.
+		recs = append(recs, Recommendation{
+			Rank:      len(recs) + 1,
 			Platform:  p,
-			Reasoning: reasoning,
+			Reasoning: aiRawResponse, 
 			ContentTemplate: &ContentTemplate{
-				Hook:     hook,
-				Caption:  caption,
-				CTA:      cta,
-				Hashtags: hashtags,
+				Hook: hook, Caption: caption, CTA: cta, Hashtags: tags,
 			},
-		}
-
-		recommendations = append(recommendations, rec)
+		})
 	}
 
 	output := AgentOutput{
-		Recommendations: recommendations,
-		StrategicAdvice: "Strategic advice placeholder",
-		Risks:           []string{"Next step: add tools"},
+		Recommendations: recs,
+		StrategicAdvice: "Focus on visual consistency and leveraging local search intent.",
+		Risks:           []string{"High competition in retail category"},
 	}
-
-	// Save query to history DB
-	if err := notion.SaveQuery(input, output); err != nil {
-		log.Println("Warning: failed to save query to Notion:", err)
+	errSave := notion.SaveQuery(input, output)
+	if errSave != nil {
+    	fmt.Printf("❌ NOTION ERROR: %v\n", errSave)
 	}
-
+	_ = notion.SaveQuery(input, output)
 	return output
-}
-
-// --------------------
-// Deterministic Helpers
-// --------------------
-func FilterPlatforms(input BusinessInput) []PlatformScore {
-	var platforms []string
-
-	switch input.BusinessType {
-	case "retail":
-		platforms = []string{"Instagram", "Facebook", "TikTok", "Google My Business"}
-	case "service":
-		platforms = []string{"Google My Business", "Facebook", "WhatsApp Business", "Instagram"}
-	case "digital":
-		platforms = []string{"LinkedIn", "Email", "YouTube", "Instagram"}
-	}
-
-	var scores []PlatformScore
-	for _, p := range platforms {
-		scores = append(scores, PlatformScore{Name: p})
-	}
-	return scores
-}
-
-// Example scoring function (mock for now)
-func mockScore(input BusinessInput, platform string) float64 {
-	score := 5.0
-	if platform == "Instagram" && input.BusinessType == "retail" {
-		score += 3
-	}
-	if input.MonthlyBudget > 200 && (platform == "Facebook" || platform == "Google My Business") {
-		score += 2
-	}
-	return score
-}
-
-// --------------------
-// Fallback Output
-// --------------------
-func ErrorOutput(msg string) AgentOutput {
-	return AgentOutput{
-		Recommendations: []Recommendation{},
-		StrategicAdvice: msg,
-		Risks:           []string{"AI unavailable"},
-	}
 }
