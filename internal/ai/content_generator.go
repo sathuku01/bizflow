@@ -8,6 +8,8 @@ type BusinessInput struct {
     MonthlyBudget   float64  `json:"monthly_budget"` // budget in USD
     CurrentChannels []string `json:"current_channels"` // optional: existing marketing channels
     PrimaryGoal     string   `json:"primary_goal"`   // "awareness" or "sales"
+	Channels []string `json:"channels"`
+
 }
 
 // ContentTemplate holds an example content snippet for a platform
